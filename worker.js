@@ -1,4 +1,4 @@
-addEventListener('fetch', event => {
+user: addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request))
   })
   
@@ -12,46 +12,37 @@ addEventListener('fetch', event => {
     // 注入我们的脚本
     let modifiedBody = originalBody.replace('</body>', `
       <script>
-      function getAllConversationHistory(){
-        // 选择所有 class 为 "font-user-message" 的元素
+      function getAllConversationHistory() {
         let userMessages = document.querySelectorAll('.font-user-message');
-        // 选择所有 class 为 "font-claude-message" 的元素
         let claudeMessages = document.querySelectorAll('.font-claude-message');
-        // 创建新的数组来存储格式化后的消息
         let messages = [];
-        // 获取用户消息和Claude消息中较短的那个长度
         let minLength = Math.min(userMessages.length, claudeMessages.length);
-        // 遍历并严格交替添加用户和Claude的消息
         for (let i = 0; i < minLength; i++) {
-            // 添加用户消息
-            messages.push({
+          messages.push({
             'role': 'user',
             'content': userMessages[i].textContent.trim()
-            });
-            // 添加Claude消息
-            messages.push({
+          });
+          messages.push({
             'role': 'assistant',
             'content': claudeMessages[i].textContent.trim()
-            });
+          });
         }
         
-        // 如果还有剩余的用户消息，添加到最后
         if (userMessages.length > minLength) {
-            messages.push({
+          messages.push({
             'role': 'user',
             'content': userMessages[minLength].textContent.trim()
-            });
+          });
         }
         return messages;
       }
       
-      function shouldShowUI(){
+      function shouldShowUI() {
         const url = window.location.href;
         const parts = url.split('/');
-        // Check if there's a first-level route and if it's "chat"
         return parts.length >= 4 && parts[3] === "chat";
       }
-  
+      
       function createHistoryControlUI() {
         const container = document.createElement('div');
         container.id = 'history-control-ui';
@@ -59,7 +50,7 @@ addEventListener('fetch', event => {
         container.style.right = '0';
         container.style.top = '30%';
         container.style.zIndex = '9999';
-    
+      
         const exportButton = document.createElement('button');
         exportButton.textContent = '导出';
         exportButton.style.padding = '8px 12px';
@@ -75,41 +66,49 @@ addEventListener('fetch', event => {
         exportButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
         exportButton.style.transition = 'background-color 0.3s';
         exportButton.style.width = 'auto';
-    
+      
         exportButton.addEventListener('mouseover', () => {
           exportButton.style.backgroundColor = '#FF1493';
         });
-    
+      
         exportButton.addEventListener('mouseout', () => {
           exportButton.style.backgroundColor = '#FF69B4';
         });
-    
+      
         exportButton.addEventListener('click', () => {
           const history = getAllConversationHistory();
-          const jsonString = JSON.stringify(history, null, 2);
-          const blob = new Blob([jsonString], { type: 'application/json' });
+          let txtContent = '';
+          history.forEach(message => {
+            if (message.role === 'user') {
+              if (message.content !== '默认跟随系统阅读障碍友好') {
+              txtContent += \`user:\n\${message.content}\n\n\`;}
+            } else if (message.role === 'assistant') {
+              txtContent += \`assistant:\n\${message.content}\n\n\`;
+            }
+          });
+          const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
           const url = URL.createObjectURL(blob);
-    
+      
           const a = document.createElement('a');
           a.href = url;
-          a.download = 'conversation_history.json';
+          a.download = 'conversation_history.txt';
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
         });
-    
+      
         container.appendChild(exportButton);
         document.body.appendChild(container);
       }
-  
+      
       function removeHistoryControlUI() {
         const container = document.getElementById('history-control-ui');
         if (container) {
           container.remove();
         }
       }
-  
+      
       function updateUI() {
         if (shouldShowUI()) {
           if (!document.getElementById('history-control-ui')) {
@@ -119,20 +118,38 @@ addEventListener('fetch', event => {
           removeHistoryControlUI();
         }
       }
-  
+      
+      let lastMessageCount = 0;
+      
+      function checkForNewMessages() {
+        const userMessages = document.querySelectorAll('.font-user-message');
+        const claudeMessages = document.querySelectorAll('.font-claude-message');
+        const currentMessageCount = userMessages.length + claudeMessages.length;
+      
+        if (currentMessageCount !== lastMessageCount) {
+          lastMessageCount = currentMessageCount;
+          updateUI();
+        }
+      }
+      
       // 初始更新UI
       updateUI();
-  
+      
       // 监听URL变化
       let lastUrl = location.href; 
       new MutationObserver(() => {
         const url = location.href;
         if (url !== lastUrl) {
           lastUrl = url;
+          lastMessageCount = 0; // Reset message count when URL changes
           updateUI();
         }
       }).observe(document, {subtree: true, childList: true});
   
+      // 监听新消息
+      new MutationObserver(() => {
+        checkForNewMessages();
+      }).observe(document.body, {subtree: true, childList: true});
       </script>
       </body>
     `)
