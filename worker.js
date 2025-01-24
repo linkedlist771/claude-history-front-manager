@@ -3,6 +3,10 @@ user: addEventListener('fetch', event => {
   })
   
   async function handleRequest(request) {
+
+    const isHTMLRequest = request.headers.get('Accept')?.includes('text/html');
+    if (isHTMLRequest) {
+
     // 获取原始响应
     let response = await fetch(request)
   
@@ -161,6 +165,9 @@ user: addEventListener('fetch', event => {
       headers: response.headers
     })
   
-    return newResponse
+    return newResponse;}
+    else {
+      return fetch(request);
+    }
   }
   
