@@ -1,21 +1,30 @@
-user: addEventListener('fetch', event => {
-    event.respondWith(handleRequest(event.request))
-  })
-  
-  async function handleRequest(request) {
+addEventListener('fetch', event => {
+  event.passThroughOnException();
+  event.respondWith(handleRequest(event.request))
+})
 
-    const isHTMLRequest = request.headers.get('Accept')?.includes('text/html');
-    if (isHTMLRequest) {
+async function handleRequest(request) {
+  const response = await fetch(request);
+  const ctype = response.headers.get('content-type');
+  if (!ctype || !ctype.startsWith('text/html')) {
+    return response; // Only parse html body
+  }
 
-    // 获取原始响应
-    let response = await fetch(request)
+  let { readable, writable } = new TransformStream();
+  let promise = injectScripts(response.body, writable);
+  return new Response(readable, response);
+}
+
+async function injectScripts(readable, writable) {
+  const writer = writable.getWriter();
+  const reader = readable.getReader();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
   
-    // 克隆响应体
-    let originalBody = await response.text()
-  
-    // 注入我们的脚本
-    let modifiedBody = originalBody.replace('</body>', `
-      <script>
+  const scriptToInject = `
+    <script>
+    (function() {
+      console.log('script injected');
       function getAllConversationHistory() {
         let userMessages = document.querySelectorAll('.font-user-message');
         let claudeMessages = document.querySelectorAll('.font-claude-message');
@@ -42,9 +51,7 @@ user: addEventListener('fetch', event => {
       }
       
       function shouldShowUI() {
-        const url = window.location.href;
-        const parts = url.split('/');
-        return parts.length >= 4 && parts[3] === "chat";
+        return true;
       }
       
       function createHistoryControlUI() {
@@ -85,7 +92,8 @@ user: addEventListener('fetch', event => {
           history.forEach(message => {
             if (message.role === 'user') {
               if (message.content !== '默认跟随系统阅读障碍友好') {
-              txtContent += \`user:\n\${message.content}\n\n\`;}
+                txtContent += \`user:\n\${message.content}\n\n\`;
+              }
             } else if (message.role === 'assistant') {
               txtContent += \`assistant:\n\${message.content}\n\n\`;
             }
@@ -123,51 +131,68 @@ user: addEventListener('fetch', event => {
         }
       }
       
+      let lastUrl = location.href;
       let lastMessageCount = 0;
       
-      function checkForNewMessages() {
+      function checkAndUpdateUI() {
         const userMessages = document.querySelectorAll('.font-user-message');
         const claudeMessages = document.querySelectorAll('.font-claude-message');
         const currentMessageCount = userMessages.length + claudeMessages.length;
+        const currentUrl = location.href;
       
-        if (currentMessageCount !== lastMessageCount) {
+        if (currentUrl !== lastUrl || currentMessageCount !== lastMessageCount) {
+          lastUrl = currentUrl;
           lastMessageCount = currentMessageCount;
           updateUI();
         }
       }
       
-      // 初始更新UI
-      updateUI();
+      // 立即开始执行检查和更新UI
+      setInterval(checkAndUpdateUI, 1000);
+      console.log('checkAndUpdateUI interval set');
+      checkAndUpdateUI();
+    })();
+    </script>
+  `;
+
+  let buffer = '';
+  
+  try {
+
+    while (true) {
+      const { done, value } = await reader.read();
       
-      // 监听URL变化
-      let lastUrl = location.href; 
-      new MutationObserver(() => {
-        const url = location.href;
-        if (url !== lastUrl) {
-          lastUrl = url;
-          lastMessageCount = 0; // Reset message count when URL changes
-          updateUI();
+      if (done) {
+        if (buffer) {
+          await writer.write(encoder.encode(buffer));
         }
-      }).observe(document, {subtree: true, childList: true});
-  
-      // 监听新消息
-      new MutationObserver(() => {
-        checkForNewMessages();
-      }).observe(document.body, {subtree: true, childList: true});
-      </script>
-      </body>
-    `)
-  
-    // 创建新的响应
-    let newResponse = new Response(modifiedBody, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers
-    })
-  
-    return newResponse;}
-    else {
-      return fetch(request);
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      
+      const bodyEndIndex = buffer.indexOf('</body>');
+      
+      if (bodyEndIndex !== -1) {
+        // Write everything before </body>
+        const beforeBody = buffer.slice(0, bodyEndIndex);
+        await writer.write(encoder.encode(beforeBody));
+        
+        // Write our injected script
+        await writer.write(encoder.encode(scriptToInject));
+        
+        // Write </body> and anything after it
+        const afterBody = buffer.slice(bodyEndIndex);
+        await writer.write(encoder.encode(afterBody));
+        
+        // Reset buffer since we've written everything
+        buffer = '';
+      }
+      
     }
+  } catch (error) {
+    console.error('Error during transform:', error);
+  } finally {
+    await writer.close();
   }
-  
+}
