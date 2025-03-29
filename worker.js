@@ -62,6 +62,11 @@ async function injectScripts(readable, writable) {
         container.style.top = '30%';
         container.style.zIndex = '9999';
       
+        // 创建下拉菜单容器
+        const dropdownContainer = document.createElement('div');
+        dropdownContainer.style.position = 'relative';
+        dropdownContainer.style.display = 'inline-block';
+      
         const exportButton = document.createElement('button');
         exportButton.textContent = '导出';
         exportButton.style.padding = '8px 12px';
@@ -78,16 +83,95 @@ async function injectScripts(readable, writable) {
         exportButton.style.transition = 'background-color 0.3s';
         exportButton.style.width = 'auto';
       
-        exportButton.addEventListener('mouseover', () => {
-          exportButton.style.backgroundColor = '#FF1493';
+        // 创建下拉菜单
+        const dropdownMenu = document.createElement('div');
+        dropdownMenu.style.display = 'none';
+        dropdownMenu.style.position = 'absolute';
+        dropdownMenu.style.right = '0';
+        dropdownMenu.style.backgroundColor = 'white';
+        dropdownMenu.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+        dropdownMenu.style.borderRadius = '4px';
+        dropdownMenu.style.overflow = 'hidden';
+      
+        // 创建菜单选项
+        const currentChatOption = document.createElement('div');
+        currentChatOption.textContent = '导出当前对话';
+        currentChatOption.style.padding = '8px 12px';
+        currentChatOption.style.cursor = 'pointer';
+        currentChatOption.style.transition = 'background-color 0.3s';
+      
+        const allChatsOption = document.createElement('div');
+        allChatsOption.textContent = '导出全部对话';
+        allChatsOption.style.padding = '8px 12px';
+        allChatsOption.style.cursor = 'pointer';
+        allChatsOption.style.transition = 'background-color 0.3s';
+      
+        // 添加悬浮效果
+        [currentChatOption, allChatsOption].forEach(option => {
+          option.addEventListener('mouseover', () => {
+            option.style.backgroundColor = '#f0f0f0';
+          });
+          option.addEventListener('mouseout', () => {
+            option.style.backgroundColor = 'white';
+          });
         });
       
-        exportButton.addEventListener('mouseout', () => {
-          exportButton.style.backgroundColor = '#FF69B4';
-        });
-      
-        exportButton.addEventListener('click', () => {
+        // 添加点击事件
+        currentChatOption.addEventListener('click', () => {
           const history = getAllConversationHistory();
+          exportConversation(history);
+          dropdownMenu.style.display = 'none';
+        });
+      
+        allChatsOption.addEventListener('click', async () => {
+          try {
+            const storedValue = localStorage.getItem('storedValue');
+            if (!storedValue) {
+              console.error('No stored conversation ID found');
+              return;
+            }
+
+            const myHeaders = new Headers();
+            myHeaders.append("User-Agent", "Apifox/1.0.0 (https://apifox.com)");
+
+            const requestOptions = {
+              method: 'GET',
+              headers: myHeaders,
+              redirect: 'follow'
+            };
+            const fetchUrl = "http://54.254.143.80:8091/conversations/" + storedValue;
+            const response = await fetch(fetchUrl, requestOptions);
+            const result = await response.text();
+            
+            // Create and trigger download
+            const blob = new Blob([result], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'all_conversations.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            dropdownMenu.style.display = 'none';
+          } catch (error) {
+            console.error('Error exporting all chats:', error);
+          }
+        });
+      
+        // 显示/隐藏下拉菜单
+        dropdownContainer.addEventListener('mouseenter', () => {
+          dropdownMenu.style.display = 'block';
+        });
+      
+        dropdownContainer.addEventListener('mouseleave', () => {
+          dropdownMenu.style.display = 'none';
+        });
+      
+        // 将原来的导出逻辑抽取为单独的函数
+        function exportConversation(history) {
           let txtContent = '';
           history.forEach(message => {
             if (message.role === 'user') {
@@ -108,9 +192,14 @@ async function injectScripts(readable, writable) {
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
-        });
+        }
       
-        container.appendChild(exportButton);
+        // 组装UI组件
+        dropdownMenu.appendChild(currentChatOption);
+        dropdownMenu.appendChild(allChatsOption);
+        dropdownContainer.appendChild(exportButton);
+        dropdownContainer.appendChild(dropdownMenu);
+        container.appendChild(dropdownContainer);
         document.body.appendChild(container);
       }
       

@@ -8,6 +8,7 @@ function getAllConversationHistory() {
         'role': 'user',
         'content': userMessages[i].textContent.trim()
       });
+      // 
       messages.push({
         'role': 'assistant',
         'content': claudeMessages[i].textContent.trim()
