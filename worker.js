@@ -1,28 +1,3 @@
-addEventListener('fetch', event => {
-  event.passThroughOnException();
-  event.respondWith(handleRequest(event.request))
-})
-
-async function handleRequest(request) {
-  const response = await fetch(request);
-  const ctype = response.headers.get('content-type');
-  if (!ctype || !ctype.startsWith('text/html')) {
-    return response; // Only parse html body
-  }
-
-  let { readable, writable } = new TransformStream();
-  let promise = injectScripts(response.body, writable);
-  return new Response(readable, response);
-}
-
-async function injectScripts(readable, writable) {
-  const writer = writable.getWriter();
-  const reader = readable.getReader();
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-
-  const scriptToInject = `
-    <script>
 (function () {
   function getAllConversationHistory() {
     let userMessages = document.querySelectorAll('.font-user-message');
@@ -355,7 +330,7 @@ async function injectScripts(readable, writable) {
   async function isCarAvailable(carID) {
     const carStatus = await getCarStatus(carID);
     // 如果 可用 或者 推荐 是message的自字符串
-    return carStatus.message.includes("可用") || carStatus.message.includes("推荐");
+    return (carStatus.message.includes("可用") || carStatus.message.includes("推荐")) &&  (!carStatus.message.includes("不可用"));
   }
 
   function redirectTo(carID) {
@@ -404,47 +379,3 @@ async function injectScripts(readable, writable) {
   }).observe(document, { subtree: true, childList: true });
 
 })();
-    </script>
-  `;
-
-  let buffer = '';
-
-  try {
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        if (buffer) {
-          await writer.write(encoder.encode(buffer));
-        }
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const bodyEndIndex = buffer.indexOf('</body>');
-
-      if (bodyEndIndex !== -1) {
-        // Write everything before </body>
-        const beforeBody = buffer.slice(0, bodyEndIndex);
-        await writer.write(encoder.encode(beforeBody));
-
-        // Write our injected script
-        await writer.write(encoder.encode(scriptToInject));
-
-        // Write </body> and anything after it
-        const afterBody = buffer.slice(bodyEndIndex);
-        await writer.write(encoder.encode(afterBody));
-
-        // Reset buffer since we've written everything
-        buffer = '';
-      }
-
-    }
-  } catch (error) {
-    console.error('Error during transform:', error);
-  } finally {
-    await writer.close();
-  }
-}

@@ -330,7 +330,7 @@
   async function isCarAvailable(carID) {
     const carStatus = await getCarStatus(carID);
     // 如果 可用 或者 推荐 是message的自字符串
-    return carStatus.message.includes("可用") || carStatus.message.includes("推荐");
+      return (carStatus.message.includes("可用") || carStatus.message.includes("推荐")) &&  (!carStatus.message.includes("不可用"));
   }
 
   function redirectTo(carID) {
